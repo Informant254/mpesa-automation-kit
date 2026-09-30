@@ -10,15 +10,17 @@ A practical Python toolkit for Safaricom Daraja integrations: STK Push, STK stat
 - Sandbox / production switch
 - Kenyan phone normalization (`0712...`, `712...`, `254712...`)
 - STK Push and STK query
-- B2C using the current `/mpesa/b2c/v3/paymentrequest` endpoint
+- B2C using `/mpesa/b2c/v3/paymentrequest`
 - Account balance request
 - Transaction status request
 - C2B validation / confirmation URL registration
 - FastAPI callback receiver
 - SQLite persistence for callback events
+- Automatic hosted callback URL generation
 - `kenyapay` CLI
 - Docker / Docker Compose
-- Unit tests
+- Render Blueprint deployment
+- Unit tests and GitHub Actions CI
 
 ## Install
 
@@ -41,6 +43,55 @@ kenyapay doctor
 ```
 
 This only reports whether variables are present. It never prints their values.
+
+## Fastest sandbox deployment: Render
+
+The repository includes `render.yaml`.
+
+Create a Render Blueprint from this GitHub repository and provide these four sandbox values when prompted:
+
+```text
+CONSUMER_KEY
+CONSUMER_SECRET
+SHORTCODE
+PASSKEY
+```
+
+`MPESA_ENVIRONMENT` defaults to `sandbox` in the Blueprint. Render exposes `RENDER_EXTERNAL_HOSTNAME`, which the SDK automatically converts into the correct HTTPS callback URLs.
+
+After deployment, verify:
+
+```text
+GET https://<your-render-host>/health
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+For the initial sandbox STK test you do not need `INITIATOR_NAME` or `SECURITY_CREDENTIAL`. Add those later for B2C, account balance, and transaction-status operations.
+
+> The free Render filesystem is not a durable production database. SQLite is fine for sandbox callback testing, but production reconciliation should use persistent storage before real money flows through the service.
+
+## Callback URL discovery
+
+When `PUBLIC_BASE_URL=https://payments.example.com`, the SDK automatically derives:
+
+```text
+https://payments.example.com/mpesa/stk/callback
+https://payments.example.com/mpesa/b2c/result
+https://payments.example.com/mpesa/b2c/timeout
+https://payments.example.com/mpesa/balance/result
+https://payments.example.com/mpesa/balance/timeout
+https://payments.example.com/mpesa/status/result
+https://payments.example.com/mpesa/status/timeout
+https://payments.example.com/mpesa/c2b/validation
+https://payments.example.com/mpesa/c2b/confirmation
+```
+
+You can still override any individual route with its matching environment variable.
 
 ## CLI examples
 
@@ -91,7 +142,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The API will listen on port `8000` and callback events are persisted in a Docker volume.
+The API listens on port `8000` and callback events are persisted in a Docker volume.
 
 ## Python usage
 
