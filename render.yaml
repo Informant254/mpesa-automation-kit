@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: mpesa-automation-kit
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn mpesa_kit.server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: MPESA_ENVIRONMENT
+        value: sandbox
+      - key: CONSUMER_KEY
+        sync: false
+      - key: CONSUMER_SECRET
+        sync: false
+      - key: SHORTCODE
+        sync: false
+      - key: PASSKEY
+        sync: false
+      - key: INITIATOR_NAME
+        sync: false
+      - key: SECURITY_CREDENTIAL
+        sync: false
