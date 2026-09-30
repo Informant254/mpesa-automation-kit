@@ -1,0 +1,12 @@
+services:
+  mpesa-kit:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - mpesa-data:/data
+    restart: unless-stopped
+
+volumes:
+  mpesa-data:
