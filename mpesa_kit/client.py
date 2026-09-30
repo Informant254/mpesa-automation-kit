@@ -35,7 +35,6 @@ class MpesaClient:
         self.consumer_secret = consumer_secret or os.getenv("CONSUMER_SECRET")
         self.shortcode = shortcode or os.getenv("SHORTCODE")
         self.passkey = passkey or os.getenv("PASSKEY")
-        self.callback_url = callback_url or os.getenv("CALLBACK_URL")
         self.initiator_name = initiator_name or os.getenv("INITIATOR_NAME")
         self.security_credential = security_credential or os.getenv("SECURITY_CREDENTIAL")
 
@@ -48,6 +47,9 @@ class MpesaClient:
         self.session = session or requests.Session()
         self.token: Optional[str] = None
         self._token_expires_at = 0.0
+
+        self.public_base_url = self._discover_public_base_url()
+        self.callback_url = callback_url or os.getenv("CALLBACK_URL") or self._default_callback("/mpesa/stk/callback")
 
     @staticmethod
     def normalize_phone(phone_number: str) -> str:
@@ -68,6 +70,24 @@ class MpesaClient:
         if value <= 0:
             raise ValueError("Amount must be greater than zero")
         return value
+
+    @staticmethod
+    def _discover_public_base_url() -> Optional[str]:
+        explicit = os.getenv("PUBLIC_BASE_URL")
+        if explicit:
+            return explicit.rstrip("/")
+        render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+        if render_hostname:
+            return "https://" + render_hostname.strip().strip("/")
+        return None
+
+    def _default_callback(self, path: str) -> Optional[str]:
+        if not self.public_base_url:
+            return None
+        return self.public_base_url + path
+
+    def _callback(self, explicit: Optional[str], env_key: str, path: str) -> Optional[str]:
+        return explicit or os.getenv(env_key) or self._default_callback(path)
 
     def _require(self, **values: Optional[str]) -> None:
         missing = [name for name, value in values.items() if not value]
@@ -118,7 +138,7 @@ class MpesaClient:
         return {"timestamp": timestamp, "password": password}
 
     def stk_push(self, phone_number: str, amount: int, account_reference: str, transaction_desc: str = "Payment", transaction_type: str = "CustomerPayBillOnline", callback_url: Optional[str] = None) -> Dict[str, Any]:
-        callback = callback_url or self.callback_url
+        callback = self._callback(callback_url or self.callback_url, "CALLBACK_URL", "/mpesa/stk/callback")
         self._require(CALLBACK_URL=callback)
         creds = self._stk_credentials()
         phone = self.normalize_phone(phone_number)
@@ -143,29 +163,29 @@ class MpesaClient:
         return self._request("/mpesa/stkpushquery/v1/query", payload)
 
     def b2c(self, phone_number: str, amount: int, remarks: str, occasion: str = "Payout", command_id: str = "BusinessPayment", result_url: Optional[str] = None, timeout_url: Optional[str] = None) -> Dict[str, Any]:
-        result = result_url or os.getenv("B2C_RESULT_URL") or self.callback_url
-        timeout = timeout_url or os.getenv("B2C_TIMEOUT_URL") or self.callback_url
+        result = self._callback(result_url, "B2C_RESULT_URL", "/mpesa/b2c/result")
+        timeout = self._callback(timeout_url, "B2C_TIMEOUT_URL", "/mpesa/b2c/timeout")
         self._require(INITIATOR_NAME=self.initiator_name, SECURITY_CREDENTIAL=self.security_credential, SHORTCODE=self.shortcode, B2C_RESULT_URL=result, B2C_TIMEOUT_URL=timeout)
         payload = {"InitiatorName": self.initiator_name, "SecurityCredential": self.security_credential, "CommandID": command_id, "Amount": self._positive_amount(amount), "PartyA": self.shortcode, "PartyB": self.normalize_phone(phone_number), "Remarks": str(remarks)[:100], "QueueTimeOutURL": timeout, "ResultURL": result, "Occasion": str(occasion)[:100]}
         return self._request("/mpesa/b2c/v3/paymentrequest", payload)
 
     def get_balance(self, result_url: Optional[str] = None, timeout_url: Optional[str] = None, remarks: str = "Balance Query") -> Dict[str, Any]:
-        result = result_url or os.getenv("BALANCE_RESULT_URL") or self.callback_url
-        timeout = timeout_url or os.getenv("BALANCE_TIMEOUT_URL") or self.callback_url
+        result = self._callback(result_url, "BALANCE_RESULT_URL", "/mpesa/balance/result")
+        timeout = self._callback(timeout_url, "BALANCE_TIMEOUT_URL", "/mpesa/balance/timeout")
         self._require(INITIATOR_NAME=self.initiator_name, SECURITY_CREDENTIAL=self.security_credential, SHORTCODE=self.shortcode, BALANCE_RESULT_URL=result, BALANCE_TIMEOUT_URL=timeout)
         payload = {"Initiator": self.initiator_name, "SecurityCredential": self.security_credential, "CommandID": "AccountBalance", "PartyA": self.shortcode, "IdentifierType": "4", "Remarks": remarks, "QueueTimeOutURL": timeout, "ResultURL": result}
         return self._request("/mpesa/accountbalance/v1/query", payload)
 
     def transaction_status(self, transaction_id: str, result_url: Optional[str] = None, timeout_url: Optional[str] = None, remarks: str = "Transaction Status Query", occasion: str = "Status") -> Dict[str, Any]:
-        result = result_url or os.getenv("STATUS_RESULT_URL") or self.callback_url
-        timeout = timeout_url or os.getenv("STATUS_TIMEOUT_URL") or self.callback_url
+        result = self._callback(result_url, "STATUS_RESULT_URL", "/mpesa/status/result")
+        timeout = self._callback(timeout_url, "STATUS_TIMEOUT_URL", "/mpesa/status/timeout")
         self._require(INITIATOR_NAME=self.initiator_name, SECURITY_CREDENTIAL=self.security_credential, SHORTCODE=self.shortcode, STATUS_RESULT_URL=result, STATUS_TIMEOUT_URL=timeout)
         payload = {"Initiator": self.initiator_name, "SecurityCredential": self.security_credential, "CommandID": "TransactionStatusQuery", "TransactionID": transaction_id, "PartyA": self.shortcode, "IdentifierType": "4", "ResultURL": result, "QueueTimeOutURL": timeout, "Remarks": remarks, "Occasion": occasion}
         return self._request("/mpesa/transactionstatus/v1/query", payload)
 
     def register_c2b_urls(self, confirmation_url: Optional[str] = None, validation_url: Optional[str] = None, response_type: str = "Completed") -> Dict[str, Any]:
-        confirmation = confirmation_url or os.getenv("C2B_CONFIRMATION_URL")
-        validation = validation_url or os.getenv("C2B_VALIDATION_URL")
+        confirmation = self._callback(confirmation_url, "C2B_CONFIRMATION_URL", "/mpesa/c2b/confirmation")
+        validation = self._callback(validation_url, "C2B_VALIDATION_URL", "/mpesa/c2b/validation")
         self._require(SHORTCODE=self.shortcode, C2B_CONFIRMATION_URL=confirmation, C2B_VALIDATION_URL=validation)
         if response_type not in {"Completed", "Cancelled"}:
             raise ValueError("response_type must be Completed or Cancelled")
