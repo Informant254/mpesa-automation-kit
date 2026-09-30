@@ -18,7 +18,3 @@ services:
         sync: false
       - key: PASSKEY
         sync: false
-      - key: INITIATOR_NAME
-        sync: false
-      - key: SECURITY_CREDENTIAL
-        sync: false
